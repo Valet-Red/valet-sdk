@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Valet SDK — vanilla JS demo</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    .msg { margin: 0.5rem 0; padding: 0.5rem 0.75rem; border-radius: 8px; }
+    .from-appuser { background: #e0f0ff; }
+    .from-ai_agent { background: #f0f0f0; }
+    .from-human_agent { background: #fff0d0; }
+    #typing { color: #888; font-style: italic; min-height: 1.2em; }
+    form { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    input { flex: 1; padding: 0.5rem; }
+    button { padding: 0.5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Chat with Ally</h1>
+  <div id="messages"></div>
+  <div id="typing"></div>
+  <form id="composer">
+    <input id="text" placeholder="Type a message..." autocomplete="off" />
+    <button type="submit">Send</button>
+  </form>
+
+  <!--
+    Two requirements for the SDK to work:
+      1. Your backend exposes /api/valet/jwt that returns a fresh
+         15-min HS256 JWT signed with your company's jwt_secret.
+      2. Your origin (e.g. https://yourapp.com) is in the company's
+         CORS allowlist on the Valet portal.
+  -->
+  <script type="module">
+    import { ValetClient } from "../dist/index.mjs"
+
+    const valet = new ValetClient({
+      agentUuid: "REPLACE_WITH_YOUR_AGENT_UUID",
+      fetchJwt:  () => fetch("/api/valet/jwt").then(r => r.text())
+    })
+
+    const convoUuid = "REPLACE_WITH_AN_EXISTING_CONVO_UUID"
+    const convo = await valet.openConvo({ convoUuid })
+
+    const messagesEl = document.getElementById("messages")
+    const typingEl   = document.getElementById("typing")
+
+    convo.on("message", ({ message }) => {
+      const div = document.createElement("div")
+      div.className = `msg from-${message.from}`
+      div.textContent = message.content
+      messagesEl.appendChild(div)
+    })
+
+    convo.on("typing", ({ state, label }) => {
+      typingEl.textContent = state === "start" ? label : ""
+    })
+
+    convo.on("convo_state", ({ state }) => {
+      console.log("convo state →", state)
+    })
+
+    document.getElementById("composer").addEventListener("submit", async (e) => {
+      e.preventDefault()
+      const input = document.getElementById("text")
+      const text = input.value.trim()
+      if (!text) return
+      input.value = ""
+      await convo.send(text)
+    })
+  </script>
+</body>
+</html>

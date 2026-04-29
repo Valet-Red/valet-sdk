@@ -1,0 +1,34 @@
+{
+  "name": "@valet/sdk",
+  "version": "0.1.0",
+  "description": "Browser SDK for Valet's per-convo SSE event stream + outbound stream_message",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@microsoft/fetch-event-source": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "happy-dom": "^15.11.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
