@@ -33,6 +33,10 @@
 //   try to reify into objects.
 
 export interface Participant {
+  // Public external id for this participant (`Agent#uuid`, `User#uuid`,
+  // or `Appuser#source_key`). Stable across messages — use it to cache
+  // an avatar bitmap or hide repeated names on consecutive bubbles.
+  id: string
   kind: "ai_agent" | "appuser" | "human_agent"
   name: string
   photo_url: string
@@ -47,41 +51,38 @@ export interface MessageFile {
 }
 
 export interface Message {
-  uuid: string
+  id: string
   content: string
-  role: string
   from: "appuser" | "ai_agent" | "human_agent"
   turn_number: number
   created_at: string
-  participant_id: number | null
-  participant_type: string | null
-  participant_key: string | null
   participant: Participant | null
   files: MessageFile[]
-  agent_convo_uuid: string
 }
 
 export interface ReadyEvent {
   type: "ready"
-  at: number
   conn_id: string
 }
 
 export interface MessageEvent {
   type: "message"
   action: "create"
-  at: number
-  agent_uuid: string
-  convo_uuid: string
+  agent_id: string
+  convo_id: string
   message: Message
+  // True only on messages emitted by the reconcile fetch (i.e. loaded
+  // from convo history on first connect / reconnect). Live broadcasts
+  // omit this flag. Consumers can filter on this to keep history out of
+  // a "live events" debug panel while still rendering the bubble.
+  from_reconcile?: true
 }
 
 export interface TypingEvent {
   type: "typing"
-  at: number
   state: "start" | "stop"
   label: string
-  convo_uuid: string
+  convo_id: string
 }
 
 export type ConvoState =
@@ -96,16 +97,14 @@ export type ConvoState =
 
 export interface ConvoStateEvent {
   type: "convo_state"
-  at: number
-  agent_uuid: string
-  convo_uuid: string
+  agent_id: string
+  convo_id: string
   state: ConvoState
   prev_state: ConvoState
 }
 
 export interface PingEvent {
   type: "ping"
-  at: number
 }
 
 export type CloseReason =
@@ -116,7 +115,6 @@ export type CloseReason =
 
 export interface ClosedEvent {
   type: "closed"
-  at: number
   reason: CloseReason
 }
 
@@ -141,13 +139,18 @@ export interface ClientEventMap {
 }
 
 export interface ValetClientConfig {
-  agentUuid: string
+  agentId: string
   fetchJwt: () => Promise<string> | string
   baseUrl?: string
+  // When true, the SDK logs lifecycle events (JWT fetch, SSE open/close,
+  // every received event, reconnect decisions, errors) to `console.debug`
+  // with a `[valet-sdk]` prefix. Off by default — turning it on in
+  // production is fine but noisy. Designed for local development.
+  debug?: boolean
 }
 
 export interface OpenConvoOptions {
-  convoUuid: string
+  convoId: string
 }
 
 // Internal chaos hooks — used by ally_dash's "exercise reconnect" mode

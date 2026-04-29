@@ -33,7 +33,7 @@
 //    (different message type). Latency is ~milliseconds — same-process
 //    postMessage. Acceptable for chat UX.
 //
-// 5. Channel name includes (agentUuid, convoUuid) so distinct convos
+// 5. Channel name includes (agentId, convoId) so distinct convos
 //    don't share leader state. A user with two different agents in two
 //    tabs gets two independent leader elections.
 //
@@ -56,6 +56,14 @@
 const CHANNEL_PREFIX        = "valet-events:"
 const HEARTBEAT_INTERVAL_MS = 1_000
 const HEARTBEAT_TIMEOUT_MS  = 3_000
+// First election runs much faster than re-election. On initial start
+// we only need to listen long enough to catch one heartbeat from a
+// pre-existing leader (heartbeats fire every 1s) — 300ms with jitter
+// is plenty when no leader is alive, while still detecting one if it
+// is. Re-elections (after a previously-seen leader goes silent) still
+// use the full HEARTBEAT_TIMEOUT_MS to avoid flapping leadership on
+// transient hiccups.
+const INITIAL_ELECTION_MS   = 300
 
 interface LeaderMessage {
   type: "heartbeat" | "event" | "claim_leader"
@@ -68,6 +76,7 @@ export class TabLeader {
   private tabId = randomId()
   private isLeader = false
   private lastSeenLeaderAt = 0
+  private hasSeenLeader = false
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private electionTimer: ReturnType<typeof setTimeout> | null = null
   private onBecameLeader: (() => void) | null = null
@@ -119,6 +128,7 @@ export class TabLeader {
     switch (msg.type) {
       case "heartbeat":
         this.lastSeenLeaderAt = Date.now()
+        this.hasSeenLeader = true
         if (this.isLeader) {
           // Two leaders is a split-brain. Lower tabId wins.
           if (msg.tabId < this.tabId) this.stepDown()
@@ -139,13 +149,19 @@ export class TabLeader {
 
   scheduleElection(): void {
     if (this.electionTimer) clearTimeout(this.electionTimer)
-    const jitter = Math.random() * 200
+    const jitter = Math.random() * 100
+    // Fast path on initial start (no leader has ever been seen on this
+    // channel): wait just long enough to catch one heartbeat from an
+    // existing leader. After we've seen a leader at least once, fall
+    // back to the conservative 3s window.
+    const wait = (this.hasSeenLeader ? HEARTBEAT_TIMEOUT_MS : INITIAL_ELECTION_MS) + jitter
+    const threshold = this.hasSeenLeader ? HEARTBEAT_TIMEOUT_MS : INITIAL_ELECTION_MS
     this.electionTimer = setTimeout(() => {
       const sinceLastSeen = Date.now() - this.lastSeenLeaderAt
-      if (sinceLastSeen > HEARTBEAT_TIMEOUT_MS) {
+      if (sinceLastSeen > threshold) {
         this.becomeLeader()
       }
-    }, HEARTBEAT_TIMEOUT_MS + jitter)
+    }, wait)
   }
 
   becomeLeader(): void {

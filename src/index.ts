@@ -1,7 +1,7 @@
 // Public exports for @valet/sdk.
 //
 // What ships in v0.1:
-//   - ValetClient          — entry point; holds (agentUuid, baseUrl, jwt).
+//   - ValetClient          — entry point; holds (agentId, baseUrl, jwt).
 //   - Convo                — per-convo handle; .on() / .send() / .close().
 //   - typed event payloads (Message, MessageEvent, TypingEvent, ConvoStateEvent, ...).
 //

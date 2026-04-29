@@ -49,7 +49,10 @@ export class JwtStore {
   private token: string | null = null
   private exp: number = 0
   private inflight: Promise<string> | null = null
-  constructor(private readonly fetchJwt: () => Promise<string> | string) {}
+  constructor(
+    private readonly fetchJwt: () => Promise<string> | string,
+    private readonly debug: boolean = false
+  ) {}
 
   // Returns a valid token. Refreshes if absent or close to expiry.
   // Concurrent callers share one in-flight refresh.
@@ -65,13 +68,18 @@ export class JwtStore {
     if (this.inflight) return this.inflight
     this.inflight = (async () => {
       try {
+        if (this.debug) console.debug("[valet-sdk] jwt.refresh: calling fetchJwt()")
         const t = await this.fetchJwt()
         if (typeof t !== "string" || t.length === 0) {
           throw new Error("fetchJwt() returned an empty token")
         }
         this.token = t
         this.exp = parseExp(t)
+        if (this.debug) console.debug("[valet-sdk] jwt.refresh OK", { expiresInMs: this.exp - Date.now() })
         return t
+      } catch (e) {
+        if (this.debug) console.debug("[valet-sdk] jwt.refresh FAILED", e)
+        throw e
       } finally {
         this.inflight = null
       }

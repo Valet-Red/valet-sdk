@@ -18,10 +18,11 @@ import { connectSse } from "./sse"
 import { TabLeader } from "./tab-leader"
 
 interface ConvoConfig {
-  agentUuid:  string
-  convoUuid:  string
-  baseUrl:    string
-  jwt:        JwtStore
+  agentId: string
+  convoId: string
+  baseUrl: string
+  jwt:     JwtStore
+  debug?:  boolean
 }
 
 type Handler<E extends ClientEventName> = (data: ClientEventMap[E]) => void
@@ -40,9 +41,15 @@ export class Convo {
   private leader: TabLeader
 
   constructor(private readonly cfg: ConvoConfig) {
-    const leaderKey = `${cfg.agentUuid}:${cfg.convoUuid}`
+    const leaderKey = `${cfg.agentId}:${cfg.convoId}`
     this.leader = new TabLeader(leaderKey)
   }
+
+  private log(...args: unknown[]): void {
+    if (this.cfg.debug) console.debug("[valet-sdk]", `[${this.cfg.convoId.slice(0, 8)}]`, ...args)
+  }
+
+
 
   // Subscribe to a typed event. Returns an unsubscribe function.
   on<E extends ClientEventName>(event: E, handler: Handler<E>): () => void {
@@ -55,25 +62,36 @@ export class Convo {
   }
 
   // POST a user message. Default fire-and-forget — the server pushes
-  // the agent's reply over /events. Customers who want token-streamed
-  // replies can pass {tokenStream: true} to fall back to consuming the
-  // SSE response from stream_message; not implemented in v0.1.
-  async send(text: string): Promise<void> {
-    const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentUuid}/agent_convos/${this.cfg.convoUuid}/stream_message`
+  // the agent's reply over /events. Pass `files` to attach uploads:
+  // the SDK uploads them first, then finalizes the draft via
+  // stream_message with the returned `message_id`.
+  async send(text: string, opts: { files?: File[] } = {}): Promise<void> {
+    let messageId: string | undefined
+    const files = opts.files ?? []
+    if (files.length > 0) {
+      messageId = await this.uploadFiles(files)
+    }
+
+    const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}/stream_message`
     const jwt = await this.cfg.jwt.get()
+    const body: Record<string, unknown> = { text }
+    if (messageId) body.message_id = messageId
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${jwt}`,
         "Content-Type":  "application/json"
       },
-      body: JSON.stringify({ text })
+      body: JSON.stringify(body)
     })
     if (!res.ok) {
-      const err = new Error(`stream_message failed: HTTP ${res.status}`)
+      const txt = await res.text().catch(() => "")
+      const err = new Error(`stream_message failed: HTTP ${res.status}${txt ? " — " + txt : ""}`)
+      this.log("send FAILED", { status: res.status, body: txt })
       this.emit("error", { error: err, phase: "fetch" })
       throw err
     }
+    this.log("send OK", { messageId })
     // Drain the body without parsing — the ambient feed delivers the
     // agent's reply via /events, and the per-turn token frames are not
     // surfaced to the customer in v0.1.
@@ -86,15 +104,46 @@ export class Convo {
     }
   }
 
+  // Upload one or more files as a draft outgoing message. Returns the
+  // server-issued `message_id` so the caller can pass it to a later
+  // `send()` (or to a fresh `stream_message`) to finalize the draft.
+  // Most callers should just pass `files` to `send()` instead — that
+  // wraps this for the common "text + attachments in one go" flow.
+  async uploadFiles(files: File[]): Promise<string> {
+    const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}/upload_file`
+    this.log("uploadFiles →", { count: files.length })
+    const jwt = await this.cfg.jwt.get()
+    const fd = new FormData()
+    for (const f of files) fd.append("files[]", f, f.name)
+    const res = await fetch(url, {
+      method:  "POST",
+      headers: { "Authorization": `Bearer ${jwt}` },
+      body:    fd
+    })
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "")
+      this.log("uploadFiles FAILED", { status: res.status, body: txt })
+      const err = new Error(`uploadFiles failed: HTTP ${res.status}${txt ? " — " + txt : ""}`)
+      this.emit("error", { error: err, phase: "fetch" })
+      throw err
+    }
+    const body = await res.json() as { message_id?: string }
+    if (!body.message_id) throw new Error("uploadFiles: server returned no message_id")
+    this.log("uploadFiles OK", { messageId: body.message_id })
+    return body.message_id
+  }
+
   // Open the SSE stream and run the reconnect loop until close().
   start(): void {
+    this.log("start")
     this.leader.start({
-      onBecameLeader:   () => this.runStreamLoop(),
+      onBecameLeader:   () => { this.log("became SSE leader"); this.runStreamLoop() },
       onForwardedEvent: (data) => this.emitForwarded(data)
     })
   }
 
   close(): void {
+    this.log("close")
     this.closed = true
     this.aborter?.abort()
     this.aborter = null
@@ -106,12 +155,13 @@ export class Convo {
   async runStreamLoop(): Promise<void> {
     while (!this.closed) {
       this.aborter = new AbortController()
-      const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentUuid}/agent_convos/${this.cfg.convoUuid}/events`
+      const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}/events`
       let lastClose: ClosedEvent["reason"] | null = null
       let httpStatus: number | undefined
       let retryAfter: number | undefined
 
       try {
+        this.log("SSE connecting →", url)
         const jwt = await this.cfg.jwt.get()
         await connectSse({
           url,
@@ -120,22 +170,25 @@ export class Convo {
             "Accept":        "text/event-stream"
           },
           signal:  this.aborter.signal,
-          onOpen:  () => { /* opened — wait for `ready` frame */ },
+          onOpen:  () => this.log("SSE opened"),
           onEvent: (evt) => {
+            this.log("SSE event", evt)
             const captured = this.handleEvent(evt)
             if (captured?.kind === "closed") lastClose = captured.reason
           },
-          onError: (_err, status, ra) => {
+          onError: (err, status, ra) => {
             httpStatus = status
             retryAfter = ra
+            this.log("SSE error", { status, retryAfter: ra, message: err instanceof Error ? err.message : String(err) })
             if (status === 401) {
               // Caller refreshes JWT before next iteration.
               void this.cfg.jwt.refresh()
             }
           }
         })
-      } catch {
+      } catch (e) {
         // connectSse re-throws onError to terminate; we handle below.
+        this.log("SSE threw", e instanceof Error ? e.message : e)
       }
 
       if (this.closed) break
@@ -146,6 +199,7 @@ export class Convo {
       } else {
         decision = this.reconnect.decideOnClose(lastClose)
       }
+      this.log("reconnect decision", { httpStatus, lastClose, ...decision })
       if (!decision.shouldReconnect) {
         this.emit("error", { error: new Error("non-recoverable close"), phase: "stream" })
         break
@@ -160,15 +214,16 @@ export class Convo {
       case "ready":
         this.reconnect.noteReady()
         this.emit("ready", evt)
-        if (!this.firstReady) {
-          // Reconnect → fill the gap.
-          void this.reconcileFetch()
-        }
+        // Always reconcile on `ready` — on first connect this loads any
+        // pre-existing messages (e.g. an agent greeting seeded at convo
+        // creation), and on reconnects it fills the live-broadcast gap.
+        // The dedupe set keeps each message from emitting twice.
+        void this.reconcileFetch()
         this.firstReady = false
         return null
       case "message": {
         const m: Message = evt.message
-        if (!this.dedupe.observe(m.uuid)) return null
+        if (!this.dedupe.observe(m.id)) return null
         this.emit("message", evt)
         this.leader.forwardEvent(evt)
         return null
@@ -197,25 +252,33 @@ export class Convo {
   // fetch on reconnect.
   async reconcileFetch(): Promise<void> {
     try {
-      const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentUuid}/agent_convos/${this.cfg.convoUuid}`
+      const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}`
+      this.log("reconcileFetch →", url)
       const jwt = await this.cfg.jwt.get()
       const res = await fetch(url, {
         method:  "GET",
         headers: { "Authorization": `Bearer ${jwt}`, "Accept": "application/json" }
       })
-      if (!res.ok) return // best-effort
+      if (!res.ok) {
+        this.log("reconcileFetch FAILED", { status: res.status })
+        return // best-effort
+      }
       const body = await res.json() as { messages?: Message[] }
+      this.log("reconcileFetch OK", { messages: body.messages?.length ?? 0 })
       if (Array.isArray(body.messages)) {
         for (const m of body.messages) {
-          if (this.dedupe.observe(m.uuid)) {
+          if (this.dedupe.observe(m.id)) {
             // Synthesize a `message` event — same shape as a live broadcast.
+            // `from_reconcile: true` lets consumers filter history out of
+            // live-event views (e.g. an event-log debug panel) while still
+            // rendering the message bubble in the chat panel.
             this.emit("message", {
               type: "message",
               action: "create",
-              at: Date.now() / 1000,
-              agent_uuid: this.cfg.agentUuid,
-              convo_uuid: this.cfg.convoUuid,
-              message: m
+              agent_id: this.cfg.agentId,
+              convo_id: this.cfg.convoId,
+              message: m,
+              from_reconcile: true
             })
           }
         }
@@ -237,7 +300,11 @@ export class Convo {
     const list = this.handlers[event] as Handler<E>[] | undefined
     if (!list) return
     for (const h of list) {
-      try { h(data) } catch { /* swallow handler errors */ }
+      try {
+        h(data)
+      } catch (e) {
+        if (this.cfg.debug) console.debug("[valet-sdk] handler threw for", event, e)
+      }
     }
   }
 }
