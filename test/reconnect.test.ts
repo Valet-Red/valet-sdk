@@ -76,6 +76,20 @@ describe("ReconnectPolicy", () => {
       expect(decision.delayMs).toBe(30_000)
     })
 
+    it("429 with absurd Retry-After is clamped to 30s", () => {
+      const p = new ReconnectPolicy()
+      // Server returning Retry-After: 600 must not put the client to sleep
+      // for 10 minutes — clamp to MAX_DELAY_MS.
+      const decision = p.decideOnError(429, 600)
+      expect(decision.delayMs).toBe(30_000)
+    })
+
+    it("429 with small Retry-After respects the smaller value", () => {
+      const p = new ReconnectPolicy()
+      const decision = p.decideOnError(429, 5)
+      expect(decision.delayMs).toBe(5_000)
+    })
+
     it("401 → reconnect immediately (caller refreshes JWT)", () => {
       const p = new ReconnectPolicy()
       expect(p.decideOnError(401)).toEqual({ shouldReconnect: true, delayMs: 0 })

@@ -37,6 +37,7 @@
 //   * Same REFRESH_AHEAD_MS = 300_000 — server contract not negotiable.
 
 const REFRESH_AHEAD_MS = 5 * 60 * 1000 // 5 min — matches server `auth_expiring` window
+const DEFAULT_FETCH_TIMEOUT_MS = 10_000 // hard-cap a hung partner /api/valet/jwt call
 
 interface JwtPayload {
   exp?: number
@@ -51,7 +52,8 @@ export class JwtStore {
   private inflight: Promise<string> | null = null
   constructor(
     private readonly fetchJwt: () => Promise<string> | string,
-    private readonly debug: boolean = false
+    private readonly debug: boolean = false,
+    private readonly fetchTimeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
   ) {}
 
   // Returns a valid token. Refreshes if absent or close to expiry.
@@ -69,7 +71,11 @@ export class JwtStore {
     this.inflight = (async () => {
       try {
         if (this.debug) console.debug("[valet-sdk] jwt.refresh: calling fetchJwt()")
-        const t = await this.fetchJwt()
+        const t = await withTimeout(
+          Promise.resolve(this.fetchJwt()),
+          this.fetchTimeoutMs,
+          `fetchJwt() timed out after ${this.fetchTimeoutMs}ms`
+        )
         if (typeof t !== "string" || t.length === 0) {
           throw new Error("fetchJwt() returned an empty token")
         }
@@ -91,6 +97,16 @@ export class JwtStore {
   peek(): { token: string | null; expiresInMs: number } {
     return { token: this.token, expiresInMs: this.token ? this.exp - Date.now() : 0 }
   }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(msg)), ms)
+    p.then(
+      v => { clearTimeout(t); resolve(v) },
+      e => { clearTimeout(t); reject(e) }
+    )
+  })
 }
 
 // Best-effort `exp` extraction. JWTs are base64url-encoded JSON; we

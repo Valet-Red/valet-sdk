@@ -14,9 +14,9 @@ vi.mock("@microsoft/fetch-event-source", () => ({
 
 import { Convo } from "../src/convo"
 import { JwtStore } from "../src/jwt"
+import type { Message } from "../src/types"
 
 function fakeJwtStore(): JwtStore {
-  // 15-min token
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })).replace(/=+$/, "")
   const payload = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 900 })).replace(/=+$/, "")
   const token = `${header}.${payload}.sig`
@@ -25,20 +25,31 @@ function fakeJwtStore(): JwtStore {
 
 function newConvo(): Convo {
   return new Convo({
-    agentUuid: "agent-uuid",
-    convoUuid: "convo-uuid",
-    baseUrl:   "https://api.test",
-    jwt:       fakeJwtStore()
+    agentId: "agent-uuid",
+    convoId: "convo-uuid",
+    baseUrl: "https://api.test",
+    jwt:     fakeJwtStore()
   })
+}
+
+function fakeMessage(id: string): Message {
+  return {
+    id,
+    content: "hi",
+    from: "appuser",
+    turn_number: 1,
+    created_at: "",
+    participant: null,
+    files: []
+  }
 }
 
 describe("Convo", () => {
   beforeEach(() => {
     mockFetchEventSource.mockReset()
-    // Default: connection succeeds, server emits one ready then closes.
     mockFetchEventSource.mockImplementation(async (_url: string, init: any) => {
       await init.onopen({ ok: true, status: 200, headers: new Map([["content-type", "text/event-stream"]]) })
-      init.onmessage({ event: "ready", data: JSON.stringify({ at: Date.now() / 1000, conn_id: "abc" }) })
+      init.onmessage({ event: "ready", data: JSON.stringify({ conn_id: "abc" }) })
     })
   })
 
@@ -46,29 +57,26 @@ describe("Convo", () => {
     const c = newConvo()
     const messages: unknown[] = []
     c.on("message", (m) => messages.push(m))
-    // Drive handleEvent directly (the public surface).
     c.handleEvent({
-      type: "message", action: "create",
-      at: 1, agent_uuid: "agent-uuid", convo_uuid: "convo-uuid",
-      message: { uuid: "m1", content: "hi", role: "", from: "appuser",
-        turn_number: 1, created_at: "", participant_id: null,
-        participant_type: null, participant_key: null, participant: null,
-        files: [], agent_convo_uuid: "convo-uuid" }
+      type: "message",
+      action: "create",
+      agent_id: "agent-uuid",
+      convo_id: "convo-uuid",
+      message: fakeMessage("m1")
     })
     expect(messages).toHaveLength(1)
   })
 
-  it("dedupes messages with the same UUID", () => {
+  it("dedupes messages with the same id", () => {
     const c = newConvo()
     const messages: unknown[] = []
     c.on("message", (m) => messages.push(m))
     const evt = {
-      type: "message" as const, action: "create" as const,
-      at: 1, agent_uuid: "agent-uuid", convo_uuid: "convo-uuid",
-      message: { uuid: "same-uuid", content: "hi", role: "", from: "appuser" as const,
-        turn_number: 1, created_at: "", participant_id: null,
-        participant_type: null, participant_key: null, participant: null,
-        files: [], agent_convo_uuid: "convo-uuid" }
+      type: "message" as const,
+      action: "create" as const,
+      agent_id: "agent-uuid",
+      convo_id: "convo-uuid",
+      message: fakeMessage("same-id")
     }
     c.handleEvent(evt)
     c.handleEvent(evt)
@@ -81,8 +89,10 @@ describe("Convo", () => {
     const typings: unknown[] = []
     c.on("typing", (t) => typings.push(t))
     c.handleEvent({
-      type: "typing", at: 1, state: "start",
-      label: "Ally is thinking…", convo_uuid: "convo-uuid"
+      type: "typing",
+      state: "start",
+      label: "Ally is thinking…",
+      convo_id: "convo-uuid"
     })
     expect(typings).toHaveLength(1)
   })
@@ -92,8 +102,11 @@ describe("Convo", () => {
     const states: any[] = []
     c.on("convo_state", (s) => states.push(s))
     c.handleEvent({
-      type: "convo_state", at: 1, agent_uuid: "agent-uuid",
-      convo_uuid: "convo-uuid", state: "escalated", prev_state: "open"
+      type: "convo_state",
+      agent_id: "agent-uuid",
+      convo_id: "convo-uuid",
+      state: "escalated",
+      prev_state: "open"
     })
     expect(states).toHaveLength(1)
     expect(states[0].state).toBe("escalated")
@@ -101,15 +114,13 @@ describe("Convo", () => {
 
   it("returns close-reason from a closed event for the reconnect loop to read", () => {
     const c = newConvo()
-    const result = c.handleEvent({
-      type: "closed", at: 1, reason: "server_cap"
-    })
+    const result = c.handleEvent({ type: "closed", reason: "server_cap" })
     expect(result).toEqual({ kind: "closed", reason: "server_cap" })
   })
 
   it("ignores ping events", () => {
     const c = newConvo()
-    const r = c.handleEvent({ type: "ping", at: 1 } as any)
+    const r = c.handleEvent({ type: "ping" })
     expect(r).toBeNull()
   })
 
@@ -117,10 +128,10 @@ describe("Convo", () => {
     const c = newConvo()
     let count = 0
     const unsub = c.on("typing", () => { count++ })
-    c.handleEvent({ type: "typing", at: 1, state: "start", label: "x", convo_uuid: "convo-uuid" })
+    c.handleEvent({ type: "typing", state: "start", label: "x", convo_id: "convo-uuid" })
     expect(count).toBe(1)
     unsub()
-    c.handleEvent({ type: "typing", at: 1, state: "stop", label: "x", convo_uuid: "convo-uuid" })
-    expect(count).toBe(1) // unsubscribed
+    c.handleEvent({ type: "typing", state: "stop", label: "x", convo_id: "convo-uuid" })
+    expect(count).toBe(1)
   })
 })

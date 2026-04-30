@@ -147,6 +147,10 @@ export interface ValetClientConfig {
   // with a `[valet-sdk]` prefix. Off by default — turning it on in
   // production is fine but noisy. Designed for local development.
   debug?: boolean
+  // Hard cap on a single fetchJwt() call. Defaults to 10s. If the
+  // partner's mint endpoint hangs, the SDK fails the refresh rather than
+  // blocking the convo indefinitely.
+  fetchJwtTimeoutMs?: number
 }
 
 export interface OpenConvoOptions {

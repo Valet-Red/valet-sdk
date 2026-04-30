@@ -98,4 +98,11 @@ describe("JwtStore", () => {
     const store = new JwtStore(fetchJwt)
     await expect(store.get()).rejects.toThrow(/empty token/)
   })
+
+  it("times out a hung fetchJwt() call", async () => {
+    // Never-resolving fetchJwt simulates a partner backend that hangs.
+    const fetchJwt = vi.fn(() => new Promise<string>(() => {}))
+    const store = new JwtStore(fetchJwt, false, 10) // 10ms timeout for test
+    await expect(store.get()).rejects.toThrow(/timed out/)
+  })
 })

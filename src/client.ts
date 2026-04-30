@@ -47,7 +47,7 @@ export class ValetClient {
     this.agentId = cfg.agentId
     this.baseUrl = (cfg.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
     this.debug   = cfg.debug === true
-    this.jwt     = new JwtStore(cfg.fetchJwt, this.debug)
+    this.jwt     = new JwtStore(cfg.fetchJwt, this.debug, cfg.fetchJwtTimeoutMs)
     if (this.debug) console.debug("[valet-sdk] ValetClient created", { agentId: this.agentId, baseUrl: this.baseUrl })
   }
 

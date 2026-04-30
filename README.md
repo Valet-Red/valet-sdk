@@ -1,9 +1,17 @@
-# @valet/sdk
+# @valet.red/sdk
 
 Browser SDK for Valet's per-convo Server-Sent Events stream + outbound `stream_message`. Embed an AI agent chat into your app with reconnect/dedupe/JWT-refresh handled for you.
 
 ```bash
-npm install @valet/sdk
+npm install @valet.red/sdk
+```
+
+Or load directly in a browser without a bundler:
+
+```html
+<script type="module">
+  import { ValetClient } from "https://unpkg.com/@valet.red/sdk@0.1.1/dist/index.js"
+</script>
 ```
 
 ## Quickstart (3 steps)
@@ -26,13 +34,13 @@ export async function GET(req: Request) {
 
   const token = jwt.sign(
     {
-      iss:         process.env.VALET_COMPANY_KEY,
-      aud:         "valet-sdk",
-      company_key: process.env.VALET_COMPANY_KEY,
-      agent_uuid:  process.env.VALET_AGENT_UUID,
-      source_key:  user.opaque_id,             // NOT user.email
-      iat:         Math.floor(Date.now() / 1000),
-      exp:         Math.floor(Date.now() / 1000) + 15 * 60
+      iss:             process.env.VALET_COMPANY_API_KEY,
+      aud:             "valet-sdk",
+      company_api_key: process.env.VALET_COMPANY_API_KEY,
+      agent_uuid:      process.env.VALET_AGENT_UUID,
+      source_key:      user.opaque_id,             // NOT user.email
+      iat:             Math.floor(Date.now() / 1000),
+      exp:             Math.floor(Date.now() / 1000) + 15 * 60
     },
     process.env.VALET_JWT_SECRET!,
     { algorithm: "HS256" }
@@ -49,11 +57,12 @@ export async function GET(req: Request) {
 import { ValetClient } from "@valet/sdk"
 
 const valet = new ValetClient({
-  agentUuid: "your-agent-uuid",
-  fetchJwt:  () => fetch("/api/valet/jwt").then(r => r.text())
+  agentId:  "your-agent-uuid",
+  fetchJwt: () => fetch("/api/valet/jwt").then(r => r.text())
 })
 
-const convo = await valet.openConvo({ convoUuid: "..." })
+const { convoId } = await valet.startSession()
+const convo = await valet.openConvo({ convoId })
 
 convo.on("message",     ({ message }) => render(message))
 convo.on("typing",      ({ label })   => showTyping(label))
@@ -76,17 +85,23 @@ That's the whole integration. The SDK handles:
 
 ## Public API
 
-### `new ValetClient({ agentUuid, fetchJwt, baseUrl? })`
+### `new ValetClient({ agentId, fetchJwt, baseUrl?, debug?, fetchJwtTimeoutMs? })`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `agentUuid` | `string` | yes | The agent your end-user is chatting with. |
-| `fetchJwt`  | `() => Promise<string>` | yes | Returns a fresh JWT. SDK calls this on demand. |
-| `baseUrl`   | `string` | no  | Defaults to `https://api.valet.red`. |
+| `agentId`           | `string`                | yes | The agent uuid your end-user is chatting with. |
+| `fetchJwt`          | `() => Promise<string>` | yes | Returns a fresh JWT. SDK calls this on demand. |
+| `baseUrl`           | `string`                | no  | Defaults to `https://api.valet.red`. |
+| `debug`             | `boolean`               | no  | Verbose `console.debug` logging. |
+| `fetchJwtTimeoutMs` | `number`                | no  | Hard cap on a single `fetchJwt()` call. Defaults to 10000. |
 
-### `valet.openConvo({ convoUuid }) → Promise<Convo>`
+### `valet.startSession() → Promise<{ convoId }>`
 
-Opens a per-convo SSE stream. Convo creation lives outside this SDK — your backend hits `POST /api/v2/agents/{agent_uuid}/agent_convos` to get a uuid first.
+Mints a brand-new open convo for the JWT-scoped appuser and returns its uuid.
+
+### `valet.openConvo({ convoId }) → Promise<Convo>`
+
+Opens a per-convo SSE stream against an existing convo uuid. Pair with `startSession()` for new chats, or pass a previously stored `convoId` to resume an existing one.
 
 ### `convo.on(event, handler) → unsubscribe`
 
@@ -130,4 +145,4 @@ See `examples/`:
 
 ## License
 
-Proprietary. See LICENSE (TODO).
+MIT. See [LICENSE](LICENSE).

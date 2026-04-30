@@ -66,7 +66,7 @@ const HEARTBEAT_TIMEOUT_MS  = 3_000
 const INITIAL_ELECTION_MS   = 300
 
 interface LeaderMessage {
-  type: "heartbeat" | "event" | "claim_leader"
+  type: "heartbeat" | "event" | "claim_leader" | "query_leader"
   tabId: string
   payload?: unknown
 }
@@ -98,7 +98,10 @@ export class TabLeader {
     }
     this.channel = new BroadcastChannel(CHANNEL_PREFIX + this.key)
     this.channel.onmessage = (e: MessageEvent<LeaderMessage>) => this.handleMessage(e.data)
-    // Wait briefly for an existing leader's heartbeat. If none, elect.
+    // Probe: ask any existing leader to identify itself immediately.
+    // Without this, INITIAL_ELECTION_MS would have to be > heartbeat
+    // interval to guarantee detection — slower for the no-leader case.
+    this.channel.postMessage({ type: "query_leader", tabId: this.tabId } satisfies LeaderMessage)
     this.scheduleElection()
   }
 
@@ -143,6 +146,14 @@ export class TabLeader {
         break
       case "claim_leader":
         if (this.isLeader && msg.tabId < this.tabId) this.stepDown()
+        break
+      case "query_leader":
+        // Existing leader replies with an immediate heartbeat so the
+        // probing tab can detect leadership without waiting a full
+        // heartbeat interval.
+        if (this.isLeader && this.channel) {
+          this.channel.postMessage({ type: "heartbeat", tabId: this.tabId } satisfies LeaderMessage)
+        }
         break
     }
   }

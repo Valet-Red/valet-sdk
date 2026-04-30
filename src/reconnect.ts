@@ -83,7 +83,7 @@ export class ReconnectPolicy {
     if (status === 429) {
       const ra = retryAfterSeconds ?? 30
       // Cap at MAX_DELAY_MS to be safe even if server returns absurd Retry-After.
-      const delayMs = Math.min(ra * 1000, Math.max(MAX_DELAY_MS, ra * 1000))
+      const delayMs = Math.min(ra * 1000, MAX_DELAY_MS)
       return { shouldReconnect: true, delayMs }
     }
     if (status === 401) {

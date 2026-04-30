@@ -17,6 +17,8 @@ import { ReconnectPolicy, sleep } from "./reconnect"
 import { connectSse } from "./sse"
 import { TabLeader } from "./tab-leader"
 
+const MAX_CONSECUTIVE_401S = 3
+
 interface ConvoConfig {
   agentId: string
   convoId: string
@@ -39,6 +41,11 @@ export class Convo {
   private reconnect = new ReconnectPolicy()
   private dedupe = new MessageDedupe()
   private leader: TabLeader
+  // Consecutive 401s. Reset on every successful `ready`. If the partner
+  // backend keeps minting tokens the server rejects (clock skew, broken
+  // secret rotation, expired company), we'd otherwise loop forever
+  // burning CPU and rate-limit budget. Hard-stop at MAX_CONSECUTIVE_401S.
+  private consecutive401s = 0
 
   constructor(private readonly cfg: ConvoConfig) {
     const leaderKey = `${cfg.agentId}:${cfg.convoId}`
@@ -193,6 +200,20 @@ export class Convo {
 
       if (this.closed) break
 
+      if (httpStatus === 401) {
+        this.consecutive401s++
+        if (this.consecutive401s >= MAX_CONSECUTIVE_401S) {
+          this.log("401 circuit breaker tripped", { consecutive: this.consecutive401s })
+          this.emit("error", {
+            error: new Error(`auth failed ${this.consecutive401s}× in a row — check JWT signing`),
+            phase: "auth"
+          })
+          break
+        }
+      } else {
+        this.consecutive401s = 0
+      }
+
       let decision
       if (httpStatus !== undefined) {
         decision = this.reconnect.decideOnError(httpStatus, retryAfter)
@@ -213,6 +234,7 @@ export class Convo {
     switch (evt.type) {
       case "ready":
         this.reconnect.noteReady()
+        this.consecutive401s = 0
         this.emit("ready", evt)
         // Always reconcile on `ready` — on first connect this loads any
         // pre-existing messages (e.g. an agent greeting seeded at convo
