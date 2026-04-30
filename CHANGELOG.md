@@ -2,6 +2,12 @@
 
 All notable changes to `@valet.red/sdk` are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-04-29
+
+### Added
+
+- npm package metadata: `repository`, `homepage`, and `bugs` fields point at https://github.com/Valet-Red/valet-sdk so the npm package page links back to source and issue tracker.
+
 ## [0.1.1] - 2026-04-29
 
 First public npm release as `@valet.red/sdk` under MIT license.

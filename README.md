@@ -10,7 +10,7 @@ Or load directly in a browser without a bundler:
 
 ```html
 <script type="module">
-  import { ValetClient } from "https://unpkg.com/@valet.red/sdk@0.1.1/dist/index.js"
+  import { ValetClient } from "https://unpkg.com/@valet.red/sdk@0.1.2/dist/index.js"
 </script>
 ```
 
