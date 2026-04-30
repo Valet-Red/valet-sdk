@@ -13,8 +13,8 @@ vi.mock("@microsoft/fetch-event-source", () => ({
 }))
 
 import { Convo } from "../src/convo"
-import { JwtStore } from "../src/jwt"
-import type { Message } from "../src/types"
+import { JwtStore } from "@valet.red/sdk-core"
+import type { Message } from "@valet.red/sdk-core"
 
 function fakeJwtStore(): JwtStore {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })).replace(/=+$/, "")

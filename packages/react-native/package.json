@@ -1,0 +1,48 @@
+{
+  "name": "@valet.red/sdk-react-native",
+  "version": "0.3.0",
+  "description": "React Native SDK for Valet's per-convo SSE event stream + outbound stream_message",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "CHANGELOG.md", "LICENSE"],
+  "keywords": ["valet", "sdk", "sse", "chat", "ai-agent", "streaming", "react-native"],
+  "homepage": "https://github.com/Valet-Red/valet-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Valet-Red/valet-sdk.git",
+    "directory": "packages/react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/Valet-Red/valet-sdk/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@valet.red/sdk-core": "^0.3.0"
+  },
+  "peerDependencies": {
+    "react-native": ">=0.71",
+    "react-native-sse": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/react-native": "^0.73.0",
+    "react-native-sse": "^1.2.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  }
+}

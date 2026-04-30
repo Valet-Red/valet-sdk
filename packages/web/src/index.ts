@@ -33,4 +33,4 @@ export type {
   ValetClientConfig,
   OpenConvoOptions,
   ChaosConfig
-} from "./types"
+} from "@valet.red/sdk-core"

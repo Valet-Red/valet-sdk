@@ -2,6 +2,47 @@
 
 All notable changes to `@valet.red/sdk` are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-30
+
+**Breaking:** V2 Client paths drop the `/agents/:agent_uuid/` segment. `agent_uuid` is already a JWT claim — repeating it in the URL was tautological. Update partner backends (or use the SDK, which handles this for you).
+
+### Changed
+
+- **URL paths**: `/api/v2/agents/:agent_uuid/sessions` → `/api/v2/sessions`. `/api/v2/agents/:agent_uuid/agent_convos` → `/api/v2/agent_convos`. `/api/v2/agents/:agent_uuid/agent_convos/:convo_uuid/...` → `/api/v2/agent_convos/:convo_uuid/...`. The SDK's `startSession()`, `listConvos()`, `convo.send()`, `convo.uploadFiles()`, and SSE subscription all hit the new paths automatically.
+- Wire (event payloads, response shapes, JWT claims) is unchanged. No event handler updates needed.
+
+### Update guide
+
+1. Bump the dep to `^0.3.0`.
+2. Bump `@valet.red/sdk-core` to `^0.3.0` if you import it directly.
+3. If you make raw fetches to V2 (without the SDK), update your URL templates to drop `/agents/:agent_uuid/`.
+
+## [0.2.0] - 2026-04-30
+
+Tracks the Valet V2 wire-shape changes that landed alongside the new `/api/v2/s2s/...` server-driven surface. Minor bump (not patch) because `TypingEvent`'s literal types changed and `startSession()` returns a richer object. Update guide at the bottom.
+
+### Added
+
+- **`TurnDoneEvent`** — fires on the per-convo channel after each TurnLoop turn ends (success / blocked / errored). Closes the gap where consumers had no signal that "the LLM finished and isn't replying" and had to infer from a `message` arrival + `typing stop` race. Reason ∈ `ok` / `blocked` / `rate_limited` / `closed` / `unavailable` / `temporary_failure`. Carries `retry_after_seconds` when rate-limited. Subscribe via `convo.on("turn_done", evt => …)`.
+- **Server-emitted `error` event** — sanitized failure frame from the per-convo channel when TurnLoop raises. Forwarded to the same `convo.on("error", …)` listener as SDK-internal errors; consumers disambiguate by the presence of `reason` (server) vs `error` (SDK-internal).
+- **`ConvoStateEvent.closed_user_message`** — server-formatted ready-to-render copy for closed states ("A teammate is taking it from here.", dated lockout strings). `null` for `state: "open"`.
+- **Two-field `TypingEvent`**: `{kind, state, label, convo_id}`. `kind` ∈ `thinking` (AI waiting on LLM) / `typing` (operator actively producing). `state` ∈ `start` / `stop`. Auto-clear rule: any `message` / `turn_done` / `error` / `convo_state` event also clears the indicator.
+- **`startSession()`** now returns `{convoId, attachmentPolicy, lockout}`. Saves a round-trip for clients that need to render upload UI or a lockout banner on chat open.
+- **HTTP 429 + `Retry-After` on `stream_message`** — `convo.send()` now throws an `Error` tagged with `retryAfterSeconds` and `status: 429` when the server rate-limits the turn. Lets callers render "try again in N seconds" UX without parsing canned reply text.
+
+### Changed
+
+- `TypingEvent.state` literal type narrowed to `"start" | "stop"` (was `"start" | "stop"` — same wire values, but `kind` is now the activity discriminator). Backward-compatible at runtime; strict TypeScript callers should switch on `kind` rather than parsing the label string.
+- `startSession()` return type widened from `{convoId}` to `StartSessionResult`. Old destructuring (`const { convoId } = await valet.startSession()`) keeps working.
+
+### Update guide
+
+Most consumers won't need code changes — the wire is additive at runtime. If you're upgrading from 0.1.x:
+
+1. Bump the dep to `^0.2.0`.
+2. To consume new features, add handlers: `convo.on("turn_done", evt => …)` and check `evt.reason` on `error` for the server-emitted shape.
+3. To use the richer `startSession` response, destructure the new fields: `const { convoId, attachmentPolicy, lockout } = await valet.startSession()`.
+
 ## [0.1.3] - 2026-04-29
 
 ### Added

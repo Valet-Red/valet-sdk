@@ -1,7 +1,7 @@
 // Unit tests for MessageDedupe.
 
 import { describe, expect, it } from "vitest"
-import { MessageDedupe } from "../src/dedupe"
+import { MessageDedupe } from "@valet.red/sdk-core"
 
 describe("MessageDedupe", () => {
   it("first observation of a UUID returns true", () => {

@@ -78,8 +78,21 @@ export interface MessageEvent {
   from_reconcile?: true
 }
 
+// Two-field typing event:
+//
+//   - `kind`  is the activity. `thinking` = the agent has sent off to
+//     the LLM and is waiting for a reply (no tokens yet). `typing` =
+//     actively producing — humans always; future AI streaming.
+//   - `state` is the lifecycle. `start` = begin showing the indicator.
+//     `stop` = clear it.
+//
+// Auto-clear rule: any `message`, `turn_done`, `error`, or `convo_state`
+// event for the same convo also clears the indicator client-side. The
+// explicit `state: "stop"` is a safety net for "operator started typing
+// then walked away without sending."
 export interface TypingEvent {
   type: "typing"
+  kind: "thinking" | "typing"
   state: "start" | "stop"
   label: string
   convo_id: string
@@ -101,10 +114,40 @@ export interface ConvoStateEvent {
   convo_id: string
   state: ConvoState
   prev_state: ConvoState
+  // Server-formatted ready-to-render copy for closed states ("A teammate
+  // is taking it from here.", dated lockout strings, etc.). `null` for
+  // `state: "open"`.
+  closed_user_message: string | null
 }
 
 export interface PingEvent {
   type: "ping"
+}
+
+// Server signals every TurnLoop turn end (success / blocked / errored)
+// so SDK consumers can finalize per-turn UI state without inferring
+// from a `message` arrival + `typing stop` race. `retry_after_seconds`
+// is only set on rate-limited turns (mirrors the HTTP 429 + Retry-After
+// on `stream_message`).
+export interface TurnDoneEvent {
+  type: "turn_done"
+  convo_id: string
+  reason: "ok" | "blocked" | "rate_limited" | "closed" | "unavailable" | "temporary_failure"
+  at: number
+  retry_after_seconds?: number
+}
+
+// Sanitized failure event from the per-convo channel — fired when
+// TurnLoop raises. Internal class/message stays in server logs +
+// Rollbar; consumers see only the coarse reason. NOT to be confused
+// with the SDK-internal `error` listener (which surfaces transport
+// failures via {error, phase}). Both shapes flow through `convo.on("error", …)`;
+// disambiguate by the presence of `reason` (server) vs `error` (SDK).
+export interface ServerErrorEvent {
+  type: "error"
+  convo_id: string
+  reason: "temporary_failure"
+  at: number
 }
 
 export type CloseReason =
@@ -123,19 +166,54 @@ export type AnyServerEvent =
   | MessageEvent
   | TypingEvent
   | ConvoStateEvent
+  | TurnDoneEvent
+  | ServerErrorEvent
   | PingEvent
   | ClosedEvent
 
 // Public event names a client can subscribe to via convo.on(...)
-export type ClientEventName = "message" | "typing" | "convo_state" | "ready" | "closed" | "error"
+export type ClientEventName = "message" | "typing" | "convo_state" | "turn_done" | "ready" | "closed" | "error"
+
+// Either shape can flow through `error`:
+//   - SDK-internal: `{error: Error, phase: "stream"|"fetch"|"auth"}`
+//   - Server-emitted: `ServerErrorEvent`
+// Disambiguate by `"reason" in evt` (server) vs `"error" in evt` (SDK).
+export type AnyErrorEvent =
+  | { error: Error; phase: "stream" | "fetch" | "auth" }
+  | ServerErrorEvent
 
 export interface ClientEventMap {
   message:     MessageEvent
   typing:      TypingEvent
   convo_state: ConvoStateEvent
+  turn_done:   TurnDoneEvent
   ready:       ReadyEvent
   closed:      ClosedEvent
-  error:       { error: Error; phase: "stream" | "fetch" | "auth" }
+  error:       AnyErrorEvent
+}
+
+// Returned by ValetClient#startSession. `attachmentPolicy` and `lockout`
+// are surfaced so the SDK caller can render upload UI + lockout banners
+// without an extra round-trip.
+export interface StartSessionResult {
+  convoId: string
+  attachmentPolicy: AttachmentPolicy
+  lockout: LockoutSnapshot
+}
+
+export interface AttachmentPolicy {
+  max_files_per_message: number
+  max_files_per_convo:   number
+  max_file_size_bytes:   number
+  allowed_mime_types:    string[]
+}
+
+export interface LockoutSnapshot {
+  locked_out:    boolean
+  expires_at:    string | null
+  permanent:     boolean
+  reason:        "permanent" | "rage" | "hack" | null
+  user_message:  string | null
 }
 
 export interface ValetClientConfig {

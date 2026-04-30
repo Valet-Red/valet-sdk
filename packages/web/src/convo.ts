@@ -10,10 +10,10 @@ import type {
   ClosedEvent,
   Message,
   ReadyEvent
-} from "./types"
-import { JwtStore } from "./jwt"
-import { MessageDedupe } from "./dedupe"
-import { ReconnectPolicy, sleep } from "./reconnect"
+} from "@valet.red/sdk-core"
+import { JwtStore } from "@valet.red/sdk-core"
+import { MessageDedupe } from "@valet.red/sdk-core"
+import { ReconnectPolicy, sleep } from "@valet.red/sdk-core"
 import { connectSse } from "./sse"
 import { TabLeader } from "./tab-leader"
 
@@ -88,7 +88,7 @@ export class Convo {
       messageId = await this.uploadFiles(files)
     }
 
-    const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}/stream_message`
+    const url = `${this.cfg.baseUrl}/api/v2/agent_convos/${this.cfg.convoId}/stream_message`
     const jwt = await this.cfg.jwt.get()
     const body: Record<string, unknown> = { text }
     if (messageId) body.message_id = messageId
@@ -100,6 +100,24 @@ export class Convo {
       },
       body: JSON.stringify(body)
     })
+    if (res.status === 429) {
+      // Rate-limited turn. Server returns:
+      //   body: {status: "rate_limited", convo_id, state, retry_after_seconds}
+      //   header: Retry-After: <seconds>
+      // Surface as a typed error so callers can render a "try again in
+      // N seconds" UX. NOT thrown as a generic fetch failure — the body
+      // is structured, not opaque.
+      const retryHeader  = res.headers.get("retry-after")
+      const headerSecs   = retryHeader ? Number(retryHeader) : undefined
+      const body         = await res.json().catch(() => ({} as any))
+      const retrySeconds = (typeof body.retry_after_seconds === "number" ? body.retry_after_seconds : undefined) ?? headerSecs
+      const err          = new Error(`rate_limited${retrySeconds ? `; retry in ${retrySeconds}s` : ""}`)
+      ;(err as any).retryAfterSeconds = retrySeconds
+      ;(err as any).status            = 429
+      this.log("send RATE_LIMITED", { retrySeconds })
+      this.emit("error", { error: err, phase: "fetch" })
+      throw err
+    }
     if (!res.ok) {
       const txt = await res.text().catch(() => "")
       const err = new Error(`stream_message failed: HTTP ${res.status}${txt ? " — " + txt : ""}`)
@@ -126,7 +144,7 @@ export class Convo {
   // Most callers should just pass `files` to `send()` instead — that
   // wraps this for the common "text + attachments in one go" flow.
   async uploadFiles(files: File[]): Promise<string> {
-    const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}/upload_file`
+    const url = `${this.cfg.baseUrl}/api/v2/agent_convos/${this.cfg.convoId}/upload_file`
     this.log("uploadFiles →", { count: files.length })
     const jwt = await this.cfg.jwt.get()
     const fd = new FormData()
@@ -214,7 +232,7 @@ export class Convo {
   async runStreamLoop(): Promise<void> {
     while (!this.closed && !this.paused) {
       this.aborter = new AbortController()
-      const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}/events`
+      const url = `${this.cfg.baseUrl}/api/v2/agent_convos/${this.cfg.convoId}/events`
       let lastClose: ClosedEvent["reason"] | null = null
       let httpStatus: number | undefined
       let retryAfter: number | undefined
@@ -310,6 +328,16 @@ export class Convo {
         this.emit("convo_state", evt)
         this.leader.forwardEvent(evt)
         return null
+      case "turn_done":
+        this.emit("turn_done", evt)
+        this.leader.forwardEvent(evt)
+        return null
+      case "error":
+        // Server-emitted SSE error frame. Forwarded to the same `error`
+        // listener as SDK-internal errors; consumers disambiguate by the
+        // presence of `reason` (server) vs `error` (SDK-internal).
+        this.emit("error", evt)
+        return null
       case "ping":
         return null
       case "closed":
@@ -326,7 +354,7 @@ export class Convo {
   // fetch on reconnect.
   async reconcileFetch(): Promise<void> {
     try {
-      const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}`
+      const url = `${this.cfg.baseUrl}/api/v2/agent_convos/${this.cfg.convoId}`
       this.log("reconcileFetch →", url)
       const jwt = await this.cfg.jwt.get()
       const res = await fetch(url, {

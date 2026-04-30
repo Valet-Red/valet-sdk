@@ -38,8 +38,13 @@
 const MAX = 5000
 
 export class MessageDedupe {
-  private set = new Set<string>()
-  private order: string[] = []
+  private set: Set<string>
+  private order: string[]
+
+  constructor() {
+    this.set = new Set<string>()
+    this.order = []
+  }
 
   // Returns true if this is the first time we've seen this UUID.
   // Returns false if it's a duplicate.

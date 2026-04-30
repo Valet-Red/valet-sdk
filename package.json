@@ -1,47 +1,13 @@
 {
-  "name": "@valet.red/sdk",
-  "version": "0.1.3",
-  "description": "Browser SDK for Valet's per-convo SSE event stream + outbound stream_message",
+  "name": "valet-sdk-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Monorepo for Valet's browser + React Native SDKs",
   "license": "MIT",
-  "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    }
-  },
-  "files": ["dist", "README.md", "CHANGELOG.md", "LICENSE"],
-  "keywords": ["valet", "sdk", "sse", "chat", "ai-agent", "streaming"],
-  "homepage": "https://github.com/Valet-Red/valet-sdk#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Valet-Red/valet-sdk.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Valet-Red/valet-sdk/issues"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
+  "workspaces": ["packages/*"],
   "scripts": {
-    "build": "tsup",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
-  },
-  "dependencies": {
-    "@microsoft/fetch-event-source": "^2.0.1"
-  },
-  "devDependencies": {
-    "@types/node": "^22.10.0",
-    "happy-dom": "^15.11.0",
-    "tsup": "^8.3.5",
-    "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "build":     "npm run build --workspaces --if-present",
+    "test":      "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

@@ -1,0 +1,39 @@
+{
+  "name": "@valet.red/sdk-core",
+  "version": "0.3.0",
+  "description": "Platform-agnostic primitives for the Valet SDKs (used by @valet.red/sdk and @valet.red/sdk-react-native)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "homepage": "https://github.com/Valet-Red/valet-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Valet-Red/valet-sdk.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/Valet-Red/valet-sdk/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  }
+}

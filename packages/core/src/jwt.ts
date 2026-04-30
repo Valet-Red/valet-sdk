@@ -37,7 +37,7 @@
 //   * Same REFRESH_AHEAD_MS = 300_000 — server contract not negotiable.
 
 const REFRESH_AHEAD_MS = 5 * 60 * 1000 // 5 min — matches server `auth_expiring` window
-const DEFAULT_FETCH_TIMEOUT_MS = 10_000 // hard-cap a hung partner /api/valet/jwt call
+const DEFAULT_FETCH_TIMEOUT_MS = 10000 // hard-cap a hung partner /api/valet/jwt call
 
 interface JwtPayload {
   exp?: number
@@ -47,14 +47,25 @@ interface JwtPayload {
 }
 
 export class JwtStore {
-  private token: string | null = null
-  private exp: number = 0
-  private inflight: Promise<string> | null = null
+  private token: string | null
+  private exp: number
+  private inflight: Promise<string> | null
+  private readonly fetchJwt: () => Promise<string> | string
+  private readonly debug: boolean
+  private readonly fetchTimeoutMs: number
+
   constructor(
-    private readonly fetchJwt: () => Promise<string> | string,
-    private readonly debug: boolean = false,
-    private readonly fetchTimeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
-  ) {}
+    fetchJwt: () => Promise<string> | string,
+    debug: boolean = false,
+    fetchTimeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
+  ) {
+    this.fetchJwt = fetchJwt
+    this.debug = debug
+    this.fetchTimeoutMs = fetchTimeoutMs
+    this.token = null
+    this.exp = 0
+    this.inflight = null
+  }
 
   // Returns a valid token. Refreshes if absent or close to expiry.
   // Concurrent callers share one in-flight refresh.

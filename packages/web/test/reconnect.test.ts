@@ -1,7 +1,7 @@
 // Unit tests for ReconnectPolicy — the close-reason switch + backoff.
 
 import { describe, expect, it } from "vitest"
-import { ReconnectPolicy } from "../src/reconnect"
+import { ReconnectPolicy } from "@valet.red/sdk-core"
 
 describe("ReconnectPolicy", () => {
   describe("close-reason switch", () => {

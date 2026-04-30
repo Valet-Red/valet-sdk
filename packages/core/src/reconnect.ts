@@ -46,7 +46,7 @@
 import type { CloseReason } from "./types"
 
 const INITIAL_DELAY_MS = 250
-const MAX_DELAY_MS     = 30_000
+const MAX_DELAY_MS     = 30000
 const FACTOR           = 2
 
 export interface ReconnectDecision {
@@ -55,7 +55,11 @@ export interface ReconnectDecision {
 }
 
 export class ReconnectPolicy {
-  private currentDelay = INITIAL_DELAY_MS
+  private currentDelay: number
+
+  constructor() {
+    this.currentDelay = INITIAL_DELAY_MS
+  }
 
   // Reset on a successful `event: ready` — the next failure starts
   // backoff from INITIAL_DELAY again.

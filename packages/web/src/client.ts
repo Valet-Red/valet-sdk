@@ -29,11 +29,34 @@
 //   The wire contract is the load-bearing thing — JS doesn't get to
 //   redefine it. See plan: "Wire contract" + "Auth contract" sections.
 
-import type { OpenConvoOptions, ValetClientConfig } from "./types"
-import { JwtStore } from "./jwt"
+import type {
+  AttachmentPolicy,
+  LockoutSnapshot,
+  OpenConvoOptions,
+  StartSessionResult,
+  ValetClientConfig
+} from "@valet.red/sdk-core"
+import { JwtStore } from "@valet.red/sdk-core"
 import { Convo } from "./convo"
 
 const DEFAULT_BASE_URL = "https://api.valet.red"
+
+// Sane fallbacks when the server omits these fields (e.g. an older
+// Valet deployment talking to a newer SDK). Real values always come
+// from the server; these just keep the typed shape stable.
+const DEFAULT_ATTACHMENT_POLICY: AttachmentPolicy = {
+  max_files_per_message: 0,
+  max_files_per_convo:   0,
+  max_file_size_bytes:   0,
+  allowed_mime_types:    []
+}
+const DEFAULT_LOCKOUT: LockoutSnapshot = {
+  locked_out:   false,
+  expires_at:   null,
+  permanent:    false,
+  reason:       null,
+  user_message: null
+}
 
 export class ValetClient {
   private readonly agentId:       string
@@ -84,10 +107,15 @@ export class ValetClient {
   // already knows who you are.
   //
   // Typical pattern:
-  //   const { convoId } = await valet.startSession()
+  //   const { convoId, attachmentPolicy, lockout } = await valet.startSession()
+  //   if (lockout.locked_out) showLockoutBanner(lockout.user_message)
   //   const convo = await valet.openConvo({ convoId })
-  async startSession(): Promise<{ convoId: string }> {
-    const url = `${this.baseUrl}/api/v2/agents/${this.agentId}/sessions`
+  //
+  // Response carries the attachment policy + lockout snapshot inline so
+  // the SDK caller can render upload UI / lockout banners without a
+  // second round-trip.
+  async startSession(): Promise<StartSessionResult> {
+    const url = `${this.baseUrl}/api/v2/sessions`
     if (this.debug) console.debug("[valet-sdk] startSession →", url)
     const jwt = await this.jwt.get()
     const res = await fetch(url, {
@@ -103,10 +131,18 @@ export class ValetClient {
       if (this.debug) console.debug("[valet-sdk] startSession FAILED", { status: res.status, body: txt })
       throw new Error(`startSession failed: HTTP ${res.status}${txt ? " — " + txt : ""}`)
     }
-    const body = await res.json() as { convo_id?: string }
+    const body = await res.json() as {
+      convo_id?:          string
+      attachment_policy?: AttachmentPolicy
+      lockout?:           LockoutSnapshot
+    }
     if (!body.convo_id) throw new Error("startSession: server returned no convo_id")
     if (this.debug) console.debug("[valet-sdk] startSession OK", { convoId: body.convo_id })
-    return { convoId: body.convo_id }
+    return {
+      convoId:          body.convo_id,
+      attachmentPolicy: body.attachment_policy ?? DEFAULT_ATTACHMENT_POLICY,
+      lockout:          body.lockout ?? DEFAULT_LOCKOUT
+    }
   }
 
   // List this appuser's recent convos for this agent. Used by demo /
@@ -114,7 +150,7 @@ export class ValetClient {
   // integrations usually don't need this — most apps render their own
   // list from their own DB.
   async listConvos(): Promise<Array<{ id: string; state: string; closed: boolean; last_message_at: string | null; created_at: string }>> {
-    const url = `${this.baseUrl}/api/v2/agents/${this.agentId}/agent_convos`
+    const url = `${this.baseUrl}/api/v2/agent_convos`
     if (this.debug) console.debug("[valet-sdk] listConvos →", url)
     const jwt = await this.jwt.get()
     const res = await fetch(url, {

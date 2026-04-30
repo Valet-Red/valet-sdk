@@ -6,7 +6,7 @@
 // validation needed for the SDK's purposes).
 
 import { describe, expect, it, vi } from "vitest"
-import { JwtStore } from "../src/jwt"
+import { JwtStore } from "@valet.red/sdk-core"
 
 function mintToken(expSecondsFromNow: number): string {
   const header = { alg: "HS256", typ: "JWT" }

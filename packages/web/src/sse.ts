@@ -46,7 +46,7 @@ import {
   type FetchEventSourceInit
 } from "@microsoft/fetch-event-source"
 
-import type { AnyServerEvent } from "./types"
+import type { AnyServerEvent } from "@valet.red/sdk-core"
 
 export interface SseStreamOptions {
   url: string
