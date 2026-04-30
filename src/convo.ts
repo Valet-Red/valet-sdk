@@ -25,6 +25,13 @@ interface ConvoConfig {
   baseUrl: string
   jwt:     JwtStore
   debug?:  boolean
+  // When true (default), the SDK closes the SSE stream when the page is
+  // hidden and reopens it when the page is visible again. Eliminates the
+  // laptop-sleep zombie-slot problem at the cost of a brief disconnect on
+  // tab-switch (typically <300ms reconnect on return). Set to false if
+  // you'd rather hold the connection across visibility changes (e.g. for
+  // a chat that must keep streaming during a brief tab switch).
+  pauseOnHidden?: boolean
 }
 
 type Handler<E extends ClientEventName> = (data: ClientEventMap[E]) => void
@@ -37,10 +44,12 @@ export class Convo {
   private handlers: { [K in ClientEventName]?: Handler<K>[] } = {}
   private aborter: AbortController | null = null
   private closed = false
+  private paused = false
   private firstReady = true
   private reconnect = new ReconnectPolicy()
   private dedupe = new MessageDedupe()
   private leader: TabLeader
+  private visibilityHandler: (() => void) | null = null
   // Consecutive 401s. Reset on every successful `ready`. If the partner
   // backend keeps minting tokens the server rejects (clock skew, broken
   // secret rotation, expired company), we'd otherwise loop forever
@@ -143,10 +152,8 @@ export class Convo {
   // Open the SSE stream and run the reconnect loop until close().
   start(): void {
     this.log("start")
-    this.leader.start({
-      onBecameLeader:   () => { this.log("became SSE leader"); this.runStreamLoop() },
-      onForwardedEvent: (data) => this.emitForwarded(data)
-    })
+    this.attachVisibilityListener()
+    this.startLeaderLoop()
   }
 
   close(): void {
@@ -155,12 +162,57 @@ export class Convo {
     this.aborter?.abort()
     this.aborter = null
     this.leader.stop()
+    this.detachVisibilityListener()
+  }
+
+  // Suspend the stream without ending the convo. Used when the page goes
+  // hidden so we don't leak a zombie slot on the server while the laptop
+  // is asleep / the tab is backgrounded. The convo remains alive — call
+  // `resume()` to reopen, or `close()` to end it permanently.
+  pause(): void {
+    if (this.paused || this.closed) return
+    this.log("pause")
+    this.paused = true
+    this.aborter?.abort()
+    this.aborter = null
+    this.leader.stop()
+  }
+
+  resume(): void {
+    if (!this.paused || this.closed) return
+    this.log("resume")
+    this.paused = false
+    this.startLeaderLoop()
+  }
+
+  private startLeaderLoop(): void {
+    this.leader.start({
+      onBecameLeader:   () => { this.log("became SSE leader"); this.runStreamLoop() },
+      onForwardedEvent: (data) => this.emitForwarded(data)
+    })
+  }
+
+  private attachVisibilityListener(): void {
+    if (this.cfg.pauseOnHidden === false) return
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") return
+    this.visibilityHandler = () => {
+      if (document.visibilityState === "hidden") this.pause()
+      else if (document.visibilityState === "visible") this.resume()
+    }
+    document.addEventListener("visibilitychange", this.visibilityHandler)
+  }
+
+  private detachVisibilityListener(): void {
+    if (this.visibilityHandler && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.visibilityHandler)
+    }
+    this.visibilityHandler = null
   }
 
   // Internal: leader runs the actual SSE loop; followers receive
   // forwarded events via BroadcastChannel.
   async runStreamLoop(): Promise<void> {
-    while (!this.closed) {
+    while (!this.closed && !this.paused) {
       this.aborter = new AbortController()
       const url = `${this.cfg.baseUrl}/api/v2/agents/${this.cfg.agentId}/agent_convos/${this.cfg.convoId}/events`
       let lastClose: ClosedEvent["reason"] | null = null
@@ -198,7 +250,7 @@ export class Convo {
         this.log("SSE threw", e instanceof Error ? e.message : e)
       }
 
-      if (this.closed) break
+      if (this.closed || this.paused) break
 
       if (httpStatus === 401) {
         this.consecutive401s++

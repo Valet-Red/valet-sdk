@@ -1,6 +1,6 @@
 {
   "name": "@valet.red/sdk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Browser SDK for Valet's per-convo SSE event stream + outbound stream_message",
   "license": "MIT",
   "type": "module",

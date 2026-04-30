@@ -151,6 +151,12 @@ export interface ValetClientConfig {
   // partner's mint endpoint hangs, the SDK fails the refresh rather than
   // blocking the convo indefinitely.
   fetchJwtTimeoutMs?: number
+  // When true (default), each opened Convo closes its SSE stream on
+  // `document.visibilitychange → hidden` and reopens on `visible`. This
+  // is the recommended setting — it eliminates the laptop-sleep zombie-
+  // slot scenario at the cost of a brief disconnect on tab-switch.
+  // Set to false to keep streams alive across visibility changes.
+  pauseOnHidden?: boolean
 }
 
 export interface OpenConvoOptions {

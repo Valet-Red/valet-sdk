@@ -134,4 +134,64 @@ describe("Convo", () => {
     c.handleEvent({ type: "typing", state: "stop", label: "x", convo_id: "convo-uuid" })
     expect(count).toBe(1)
   })
+
+  describe("pauseOnHidden", () => {
+    function fireVisibility(state: "hidden" | "visible") {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: state })
+      document.dispatchEvent(new Event("visibilitychange"))
+    }
+
+    it("pauses on visibilitychange → hidden and resumes on → visible (default)", () => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" })
+      const c = new Convo({
+        agentId: "agent-uuid",
+        convoId: "convo-uuid",
+        baseUrl: "https://api.test",
+        jwt:     fakeJwtStore()
+      })
+      c.start()
+      expect((c as any).paused).toBe(false)
+
+      fireVisibility("hidden")
+      expect((c as any).paused).toBe(true)
+
+      fireVisibility("visible")
+      expect((c as any).paused).toBe(false)
+
+      c.close()
+    })
+
+    it("ignores visibility changes when pauseOnHidden=false", () => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" })
+      const c = new Convo({
+        agentId:       "agent-uuid",
+        convoId:       "convo-uuid",
+        baseUrl:       "https://api.test",
+        jwt:           fakeJwtStore(),
+        pauseOnHidden: false
+      })
+      c.start()
+
+      fireVisibility("hidden")
+      expect((c as any).paused).toBe(false)
+
+      c.close()
+    })
+
+    it("close() detaches the visibility listener so post-close events are no-ops", () => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" })
+      const c = new Convo({
+        agentId: "agent-uuid",
+        convoId: "convo-uuid",
+        baseUrl: "https://api.test",
+        jwt:     fakeJwtStore()
+      })
+      c.start()
+      c.close()
+
+      fireVisibility("hidden")
+      expect((c as any).paused).toBe(false)
+      expect((c as any).closed).toBe(true)
+    })
+  })
 })

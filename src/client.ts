@@ -36,18 +36,20 @@ import { Convo } from "./convo"
 const DEFAULT_BASE_URL = "https://api.valet.red"
 
 export class ValetClient {
-  private readonly agentId: string
-  private readonly baseUrl: string
-  private readonly jwt:     JwtStore
-  private readonly debug:   boolean
+  private readonly agentId:       string
+  private readonly baseUrl:       string
+  private readonly jwt:           JwtStore
+  private readonly debug:         boolean
+  private readonly pauseOnHidden: boolean
 
   constructor(cfg: ValetClientConfig) {
     if (!cfg.agentId) throw new Error("ValetClient: agentId is required")
     if (typeof cfg.fetchJwt !== "function") throw new Error("ValetClient: fetchJwt callback is required")
-    this.agentId = cfg.agentId
-    this.baseUrl = (cfg.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
-    this.debug   = cfg.debug === true
-    this.jwt     = new JwtStore(cfg.fetchJwt, this.debug, cfg.fetchJwtTimeoutMs)
+    this.agentId       = cfg.agentId
+    this.baseUrl       = (cfg.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
+    this.debug         = cfg.debug === true
+    this.pauseOnHidden = cfg.pauseOnHidden !== false  // default true
+    this.jwt           = new JwtStore(cfg.fetchJwt, this.debug, cfg.fetchJwtTimeoutMs)
     if (this.debug) console.debug("[valet-sdk] ValetClient created", { agentId: this.agentId, baseUrl: this.baseUrl })
   }
 
@@ -64,11 +66,12 @@ export class ValetClient {
     await this.jwt.get()
     if (this.debug) console.debug("[valet-sdk] openConvo", { convoId: opts.convoId })
     const convo = new Convo({
-      agentId: this.agentId,
-      convoId: opts.convoId,
-      baseUrl: this.baseUrl,
-      jwt:     this.jwt,
-      debug:   this.debug
+      agentId:       this.agentId,
+      convoId:       opts.convoId,
+      baseUrl:       this.baseUrl,
+      jwt:           this.jwt,
+      debug:         this.debug,
+      pauseOnHidden: this.pauseOnHidden
     })
     convo.start()
     return convo

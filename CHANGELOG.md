@@ -2,6 +2,13 @@
 
 All notable changes to `@valet.red/sdk` are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-04-29
+
+### Added
+
+- **`pauseOnHidden` (default `true`)** — each `Convo` now closes its SSE stream on `document.visibilitychange → hidden` and reopens on `visible`. Eliminates the laptop-sleep / backgrounded-tab zombie-slot scenario that could pin the per-(appuser, agent) connection cap of 2 for up to an hour. Cost: a brief disconnect on tab-switch (typically <300 ms reconnect on return). Set `pauseOnHidden: false` on `ValetClientConfig` to keep streams alive across visibility changes (the legacy 0.1.2 behavior).
+- New `Convo.pause()` / `Convo.resume()` methods exposed for hosts that want to drive suspension manually instead of (or in addition to) the visibility listener. ([src/convo.ts](src/convo.ts))
+
 ## [0.1.2] - 2026-04-29
 
 ### Added
